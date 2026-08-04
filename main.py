@@ -12,6 +12,66 @@ st.set_page_config(
 APP_URL = "https://hirelyzer-career-based-saas-platform-fhk7kqucw2tjaudtpywq8t.streamlit.app/"
 SUPPORT_EMAIL = "swagato_bmca2024@msit.edu.in"
 
+# ─── chatbot decision tree (plain Python — no JS needed) ─────────────────────
+HL_BOT_TREE = {
+    "menu": {
+        "options": [
+            "What is Hirelyzer?",
+            "Is it free?",
+            "What can it do?",
+            "Is my data private?",
+            "What file formats are supported?",
+            "How do I get started?",
+            "Contact support",
+        ]
+    },
+    "What is Hirelyzer?": {
+        "answer": "Hirelyzer is an AI-powered career platform — it analyzes and improves your resume, helps you build a polished resume/cover letter, runs mock interviews with an AI coach, searches live job listings, and flags scam job postings, all in one place.",
+        "options": ["What can it do?", "Is it free?", "How do I get started?", "⬅ Back to menu"],
+    },
+    "Is it free?": {
+        "answer": "Yes — core features including ATS scoring, bias detection, and job search are fully free. No credit card required to get started.",
+        "options": ["⬅ Back to menu"],
+    },
+    "What can it do?": {
+        "answer": "Five main tools: **Resume Analysis** (ATS scoring + bias detection), **Resume Builder** (15+ templates), **AI Interview Coach** (adaptive mock interviews with real-time scoring), **Job Search** (live listings + salary data), and **Job Scam Detector** (verifies company legitimacy before you apply).",
+        "options": [
+            "How does the AI Interview Coach work?",
+            "How does the Resume Builder work?",
+            "How does the Job Scam Detector work?",
+            "⬅ Back to menu",
+        ],
+    },
+    "How does the AI Interview Coach work?": {
+        "answer": "Upload your resume and Hirelyzer generates tailored interview questions from your actual experience. You answer in free text, and the AI scores you across knowledge, communication, and relevance — with adaptive follow-up questions on Hard difficulty that get tougher based on how you answer.",
+        "options": ["⬅ Back to menu"],
+    },
+    "How does the Resume Builder work?": {
+        "answer": "Choose from 15+ professionally designed templates, write or AI-rewrite your content, and export straight to PDF or DOCX — a matching cover letter builder is included too.",
+        "options": ["⬅ Back to menu"],
+    },
+    "How does the Job Scam Detector work?": {
+        "answer": "Four detection layers run together: 6 live network probes (domain age, site reachability, typosquatting, free-email detection, MX mail server check, and MCA company registry lookup), a 15-signal weighted rule engine, and a full AI deep-read of the listing text — all blended into one risk score (60% AI, 25% rules, 15% probe penalty) so no single weak signal misleads you.",
+        "options": ["⬅ Back to menu"],
+    },
+    "Is my data private?": {
+        "answer": "Your resume is processed securely and never shared with third parties or recruiters. You control your data entirely.",
+        "options": ["⬅ Back to menu"],
+    },
+    "What file formats are supported?": {
+        "answer": "PDF is the primary format — the parser handles standard, multi-column, and scanned (OCR) resumes. You can export to DOCX or PDF from the Resume Builder.",
+        "options": ["⬅ Back to menu"],
+    },
+    "How do I get started?": {
+        "answer": f"Just click the “Get Started” button at the top of the page — it's free and takes about a minute. [Open Hirelyzer →]({APP_URL})",
+        "options": ["⬅ Back to menu"],
+    },
+    "Contact support": {
+        "answer": f"Reach us anytime at [{SUPPORT_EMAIL}](mailto:{SUPPORT_EMAIL}).",
+        "options": ["⬅ Back to menu"],
+    },
+}
+
 # ─── helpers ──────────────────────────────────────────────────────────────────
 def H(s):
     st.markdown(s, unsafe_allow_html=True)
@@ -1670,246 +1730,72 @@ def render_footer():
 # Q&A about the website itself. Matches the existing H()/CSS() injection pattern
 # used throughout this file, and reuses the same design tokens (colors, fonts).
 def render_chatbot():
-    # Everything (button, panel, CSS, JS) lives inside ONE self-contained
-    # iframe via components.html(). This sidesteps two separate Streamlit
-    # HTML/JS quirks entirely:
-    #   1. <script> tags inserted through st.markdown(unsafe_allow_html=True)
-    #      are never executed by the browser (innerHTML-inserted scripts
-    #      don't run — a documented Streamlit limitation).
-    #   2. Trying to reach from a components.html() iframe back into the
-    #      main page's DOM (via window.parent) depends on the iframe's
-    #      sandbox flags, which can be locked down tighter on hosted
-    #      environments like Streamlit Community Cloud, breaking that trick.
-    # By keeping the widget's HTML/CSS/JS all inside the same iframe
-    # document, the script is part of the iframe's normal page load (so it
-    # executes normally, no exceptions), and it only ever touches elements
-    # inside its own iframe. We then just pin that iframe to the bottom
-    # right corner of the screen with CSS on its wrapper, which *does* work
-    # via st.markdown since <style> tags apply immediately (unlike scripts).
+    # Native Streamlit widget instead of custom HTML/JS/iframe: st.popover
+    # is a real React component that Streamlit's own frontend manages the
+    # open/close state for. No <script> tags, no iframe sandboxing, no
+    # cross-frame access — so there's nothing for the platform to silently
+    # drop. We just restyle the trigger button with CSS (via its `key`,
+    # which Streamlit exposes as the stable class `.st-key-<key>`) to look
+    # like a floating chat bubble pinned to the corner.
     CSS("""
-    div[data-testid="stIFrame"] {
+    .st-key-hl_bot_popover {
       position: fixed !important;
-      right: 0 !important; bottom: 0 !important; left: auto !important; top: auto !important;
-      width: 380px !important; max-width: 100vw !important;
-      height: 620px !important; max-height: 100vh !important;
+      bottom: 24px !important; right: 24px !important;
       z-index: 999999 !important;
-      background: transparent !important;
-      margin: 0 !important; padding: 0 !important; border: none !important;
+      width: auto !important;
     }
-    div[data-testid="stIFrame"] iframe {
-      width: 100% !important; height: 100% !important;
-      border: none !important; background: transparent !important;
+    .st-key-hl_bot_popover button {
+      width: 56px !important; height: 56px !important;
+      border-radius: 50% !important;
+      background: linear-gradient(135deg, var(--blue), var(--purple)) !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      box-shadow: 0 4px 24px rgba(10,132,255,0.35), 0 2px 8px rgba(0,0,0,0.4) !important;
+      font-size: 22px !important;
+      padding: 0 !important;
+      transition: transform 0.15s ease !important;
     }
+    .st-key-hl_bot_popover button:hover { transform: scale(1.06); }
+    .st-key-hl_bot_popover button p { font-size: 22px !important; margin: 0 !important; }
+
+    div[data-testid="stPopoverBody"] {
+      width: 340px !important; max-width: calc(100vw - 32px) !important;
+      max-height: 65vh !important;
+      background: var(--surface2) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 18px !important;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.55) !important;
+    }
+    .hl-bot-title { color: var(--fg); font-weight: 700; font-size: 14.5px; }
+    .hl-bot-sub { color: var(--fg2); font-size: 11.5px; margin-bottom: 8px; }
     """)
 
-    chatbot_html = """
-    <!doctype html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <style>
-    :root {
-      --blue: #0a84ff; --green: #30d158; --purple: #bf5af2;
-      --fg: #f5f5f7; --fg2: rgba(245,245,247,0.5);
-      --border: rgba(255,255,255,0.08); --surface2: #111115;
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; font-family: 'Sora', sans-serif; }
-
-    #hl-bot-fab {
-      position: absolute; bottom: 24px; right: 24px; z-index: 2;
-      width: 56px; height: 56px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--blue), var(--purple));
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; box-shadow: 0 4px 24px rgba(10,132,255,0.35), 0 2px 8px rgba(0,0,0,0.4);
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-      border: 1px solid rgba(255,255,255,0.12);
-    }
-    #hl-bot-fab:hover { transform: scale(1.06); box-shadow: 0 6px 28px rgba(10,132,255,0.5), 0 2px 8px rgba(0,0,0,0.4); }
-    #hl-bot-fab svg { width: 26px; height: 26px; }
-    #hl-bot-fab .hl-bot-fab-close { display: none; }
-    #hl-bot-fab.open .hl-bot-fab-chat { display: none; }
-    #hl-bot-fab.open .hl-bot-fab-close { display: block; }
-
-    #hl-bot-panel {
-      position: absolute; bottom: 92px; right: 24px; z-index: 1;
-      width: 340px; max-width: calc(100vw - 32px);
-      height: 500px; max-height: calc(100vh - 140px);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      box-shadow: 0 12px 48px rgba(0,0,0,0.55);
-      display: none; flex-direction: column; overflow: hidden;
-    }
-    #hl-bot-panel.open { display: flex; animation: hlBotIn 0.22s ease; }
-    @keyframes hlBotIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-
-    #hl-bot-header {
-      padding: 16px 18px; background: linear-gradient(135deg, rgba(10,132,255,0.14), rgba(191,90,242,0.10));
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
-    }
-    #hl-bot-header .hl-bot-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
-    #hl-bot-header .hl-bot-title { color: var(--fg); font-weight: 700; font-size: 14.5px; letter-spacing: -0.2px; }
-    #hl-bot-header .hl-bot-sub { color: var(--fg2); font-size: 11.5px; margin-top: 1px; }
-
-    #hl-bot-messages { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 10px; }
-    #hl-bot-messages::-webkit-scrollbar { width: 5px; }
-    #hl-bot-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
-
-    .hl-bot-msg { max-width: 84%; padding: 10px 13px; border-radius: 13px; font-size: 13px; line-height: 1.5; }
-    .hl-bot-msg.bot { background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--fg); align-self: flex-start; border-bottom-left-radius: 3px; }
-    .hl-bot-msg.user { background: var(--blue); color: #fff; align-self: flex-end; border-bottom-right-radius: 3px; font-weight: 500; }
-    .hl-bot-msg a { color: #4db3ff; }
-
-    #hl-bot-options { padding: 10px 14px 16px; display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; border-top: 1px solid var(--border); }
-    .hl-bot-opt {
-      background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--fg);
-      padding: 9px 12px; border-radius: 10px; font-size: 12.5px; cursor: pointer;
-      transition: background 0.15s ease, border-color 0.15s ease; text-align: left;
-    }
-    .hl-bot-opt:hover { background: rgba(10,132,255,0.12); border-color: rgba(10,132,255,0.35); }
-    </style>
-    </head>
-    <body>
-
-    <div id="hl-bot-fab">
-      <svg class="hl-bot-fab-chat" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1 1 0 011 1v10a1 1 0 01-1 1H8l-4 4V6a1 1 0 011-1z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><circle cx="9" cy="11" r="1" fill="#fff"/><circle cx="12" cy="11" r="1" fill="#fff"/><circle cx="15" cy="11" r="1" fill="#fff"/></svg>
-      <svg class="hl-bot-fab-close" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
-    </div>
-
-    <div id="hl-bot-panel">
-      <div id="hl-bot-header">
-        <div class="hl-bot-dot"></div>
-        <div>
-          <div class="hl-bot-title">Hirelyzer Assistant</div>
-          <div class="hl-bot-sub">Ask about the platform</div>
-        </div>
-      </div>
-      <div id="hl-bot-messages"></div>
-      <div id="hl-bot-options"></div>
-    </div>
-
-    <script>
-    (function(){
-
-    var HL_BOT_TREE = {
-      "menu": {
-        "options": [
-          "What is Hirelyzer?",
-          "Is it free?",
-          "What can it do?",
-          "Is my data private?",
-          "What file formats are supported?",
-          "How do I get started?",
-          "Contact support"
+    if "hl_bot_node" not in st.session_state:
+        st.session_state.hl_bot_node = "menu"
+        st.session_state.hl_bot_history = [
+            ("bot", "Hi! I'm the Hirelyzer assistant. Ask me anything about the platform — pick a question below.")
         ]
-      },
-      "What is Hirelyzer?": {
-        "answer": "Hirelyzer is an AI-powered career platform \u2014 it analyzes and improves your resume, helps you build a polished resume/cover letter, runs mock interviews with an AI coach, searches live job listings, and flags scam job postings, all in one place.",
-        "options": ["What can it do?", "Is it free?", "How do I get started?", "\u2b05 Back to menu"]
-      },
-      "Is it free?": {
-        "answer": "Yes \u2014 core features including ATS scoring, bias detection, and job search are fully free. No credit card required to get started.",
-        "options": ["\u2b05 Back to menu"]
-      },
-      "What can it do?": {
-        "answer": "Five main tools: <b>Resume Analysis</b> (ATS scoring + bias detection), <b>Resume Builder</b> (15+ templates), <b>AI Interview Coach</b> (adaptive mock interviews with real-time scoring), <b>Job Search</b> (live listings + salary data), and <b>Job Scam Detector</b> (verifies company legitimacy before you apply).",
-        "options": ["How does the AI Interview Coach work?", "How does the Resume Builder work?", "How does the Job Scam Detector work?", "\u2b05 Back to menu"]
-      },
-      "How does the AI Interview Coach work?": {
-        "answer": "Upload your resume and Hirelyzer generates tailored interview questions from your actual experience. You answer in free text, and the AI scores you across knowledge, communication, and relevance \u2014 with adaptive follow-up questions on Hard difficulty that get tougher based on how you answer.",
-        "options": ["\u2b05 Back to menu"]
-      },
-      "How does the Resume Builder work?": {
-        "answer": "Choose from 15+ professionally designed templates, write or AI-rewrite your content, and export straight to PDF or DOCX \u2014 a matching cover letter builder is included too.",
-        "options": ["\u2b05 Back to menu"]
-      },
-      "How does the Job Scam Detector work?": {
-        "answer": "Four detection layers run together: 6 live network probes (domain age, site reachability, typosquatting, free-email detection, MX mail server check, and MCA company registry lookup), a 15-signal weighted rule engine, and a full AI deep-read of the listing text \u2014 all blended into one risk score (60% AI, 25% rules, 15% probe penalty) so no single weak signal misleads you.",
-        "options": ["\u2b05 Back to menu"]
-      },
-      "Is my data private?": {
-        "answer": "Your resume is processed securely and never shared with third parties or recruiters. You control your data entirely.",
-        "options": ["\u2b05 Back to menu"]
-      },
-      "What file formats are supported?": {
-        "answer": "PDF is the primary format \u2014 the parser handles standard, multi-column, and scanned (OCR) resumes. You can export to DOCX or PDF from the Resume Builder.",
-        "options": ["\u2b05 Back to menu"]
-      },
-      "How do I get started?": {
-        "answer": "Just click the \u201cGet Started\u201d button at the top of the page \u2014 it's free and takes about a minute. <a href=\"__APP_URL__\" target=\"_blank\">Open Hirelyzer \u2192</a>",
-        "options": ["\u2b05 Back to menu"]
-      },
-      "Contact support": {
-        "answer": "Reach us anytime at <a href=\"mailto:__SUPPORT_EMAIL__\">__SUPPORT_EMAIL__</a>.",
-        "options": ["\u2b05 Back to menu"]
-      }
-    };
 
-    var hlBotOpened = false;
-    var hlBotGreeted = false;
+    with st.popover("💬", key="hl_bot_popover"):
+        H('<div class="hl-bot-title">Hirelyzer Assistant</div><div class="hl-bot-sub">Ask about the platform</div>')
 
-    function hlBotToggle(){
-      var panel = document.getElementById("hl-bot-panel");
-      var fab = document.getElementById("hl-bot-fab");
-      hlBotOpened = !hlBotOpened;
-      panel.classList.toggle("open", hlBotOpened);
-      fab.classList.toggle("open", hlBotOpened);
-      if (hlBotOpened && !hlBotGreeted) {
-        hlBotGreeted = true;
-        hlBotAddMessage("bot", "Hi! I'm the Hirelyzer assistant. Ask me anything about the platform \u2014 pick a question below.");
-        hlBotShowOptions(HL_BOT_TREE["menu"].options);
-      }
-    }
+        for role, text in st.session_state.hl_bot_history:
+            with st.chat_message("assistant" if role == "bot" else "user"):
+                st.markdown(text)
 
-    function hlBotAddMessage(role, html){
-      var messages = document.getElementById("hl-bot-messages");
-      var div = document.createElement("div");
-      div.className = "hl-bot-msg " + role;
-      div.innerHTML = html;
-      messages.appendChild(div);
-      messages.scrollTop = messages.scrollHeight;
-    }
+        node_key = st.session_state.hl_bot_node
+        node = HL_BOT_TREE.get(node_key, HL_BOT_TREE["menu"])
+        options = node.get("options", HL_BOT_TREE["menu"]["options"])
 
-    function hlBotShowOptions(options){
-      var optsEl = document.getElementById("hl-bot-options");
-      optsEl.innerHTML = "";
-      options.forEach(function(optText){
-        var btn = document.createElement("div");
-        btn.className = "hl-bot-opt";
-        btn.textContent = optText;
-        btn.onclick = function(){ hlBotSelect(optText); };
-        optsEl.appendChild(btn);
-      });
-    }
-
-    function hlBotSelect(optText){
-      if (optText === "\u2b05 Back to menu") {
-        hlBotAddMessage("bot", "What else would you like to know?");
-        hlBotShowOptions(HL_BOT_TREE["menu"].options);
-        return;
-      }
-      var node = HL_BOT_TREE[optText];
-      if (!node) return;
-      hlBotAddMessage("user", optText);
-      var answer = node.answer;
-      setTimeout(function(){
-        hlBotAddMessage("bot", answer);
-        hlBotShowOptions(node.options);
-      }, 260);
-    }
-
-    document.getElementById("hl-bot-fab").addEventListener("click", hlBotToggle);
-
-    })();
-    </script>
-    </body>
-    </html>
-    """.replace("__APP_URL__", APP_URL).replace("__SUPPORT_EMAIL__", SUPPORT_EMAIL)
-
-    components.html(chatbot_html, height=620, width=380, scrolling=False)
-
+        for i, opt in enumerate(options):
+            if st.button(opt, key=f"hlbot_opt_{node_key}_{i}", use_container_width=True):
+                if opt == "⬅ Back to menu":
+                    st.session_state.hl_bot_history.append(("bot", "What else would you like to know?"))
+                    st.session_state.hl_bot_node = "menu"
+                else:
+                    st.session_state.hl_bot_history.append(("user", opt))
+                    st.session_state.hl_bot_history.append(("bot", HL_BOT_TREE[opt]["answer"]))
+                    st.session_state.hl_bot_node = opt
+                st.rerun()
 
 
 def render_js():
