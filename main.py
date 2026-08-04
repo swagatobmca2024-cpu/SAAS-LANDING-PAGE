@@ -1,16 +1,58 @@
+import hashlib
 import math
 import json
+from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 
 try:
-    from chatbot_llm import ask_chatbot
+    from chatbot_llm import ask_chatbot, check_rate_limit, record_message
     _CHATBOT_LLM_AVAILABLE = True
 except Exception:
     # chatbot_llm.py missing, or its `openai` dependency isn't installed yet,
     # or GROQ_API_KEYS isn't set — degrade gracefully to menu-only mode
     # instead of crashing the whole landing page.
     _CHATBOT_LLM_AVAILABLE = False
+
+
+def _resolve_client_id() -> str:
+    """
+    Best-effort visitor identifier for rate limiting, IP first.
+    Streamlit doesn't expose the client IP through a stable public API, so
+    this reaches into runtime internals that can break on a Streamlit
+    version bump — hence the broad except. Falls back to the per-session
+    script-run context id (resets on refresh, but still works) so the chat
+    never breaks even if the IP lookup stops working.
+    """
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        from streamlit.runtime import get_instance
+        ctx = get_script_run_ctx()
+        if ctx is not None:
+            client = get_instance().get_client(ctx.session_id)
+            if client is not None and getattr(client, "request", None) is not None:
+                ip = getattr(client.request, "remote_ip", None)
+                if ip:
+                    return f"ip:{ip}"
+    except Exception:
+        pass
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        ctx = get_script_run_ctx()
+        if ctx is not None and ctx.session_id:
+            return f"session:{ctx.session_id}"
+    except Exception:
+        pass
+    return "unknown"
+
+
+try:
+    from docx_to_pdf import convert_docx_to_pdf, soffice_available
+    _DOCX_CONVERT_AVAILABLE = True
+except Exception:
+    # docx_to_pdf.py missing — degrade gracefully, same pattern as the
+    # chatbot import above.
+    _DOCX_CONVERT_AVAILABLE = False
 
 st.set_page_config(
     page_title="HIRELYZER — Intelligent Career Platform",
@@ -1776,16 +1818,46 @@ def render_chatbot():
     }
     .hl-bot-title { color: var(--fg); font-weight: 700; font-size: 14.5px; }
     .hl-bot-sub { color: var(--fg2); font-size: 11.5px; margin-bottom: 8px; }
+    .hl-bot-header { display: flex; align-items: flex-start; justify-content: space-between; }
+    .hl-bot-limit { color: var(--fg2); font-size: 11px; margin-top: 2px; }
+    .st-key-hl_bot_refresh button {
+      width: 28px !important; height: 28px !important;
+      border-radius: 50% !important;
+      background: transparent !important;
+      border: 1px solid var(--border) !important;
+      padding: 0 !important;
+      min-height: 28px !important;
+      font-size: 13px !important;
+      color: var(--fg2) !important;
+    }
+    .st-key-hl_bot_refresh button:hover {
+      color: var(--fg) !important;
+      border-color: var(--fg2) !important;
+    }
+    .st-key-hl_bot_refresh button p { font-size: 13px !important; margin: 0 !important; }
     """)
 
-    if "hl_bot_node" not in st.session_state:
+    def _reset_bot_state():
+        # Resets the visible conversation only — the rate limit is tracked
+        # server-side by client_id (see check_rate_limit/record_message in
+        # chatbot_llm.py) and is deliberately NOT reset here, or refreshing
+        # the chat would also reset the abuse guard.
         st.session_state.hl_bot_node = "menu"
         st.session_state.hl_bot_history = [
             ("bot", "Hi! I'm the Hirelyzer assistant. Ask me anything about the platform — pick a question below.")
         ]
 
+    if "hl_bot_node" not in st.session_state:
+        _reset_bot_state()
+
     with st.popover("💬", key="hl_bot_popover"):
-        H('<div class="hl-bot-title">Hirelyzer Assistant</div><div class="hl-bot-sub">Ask about the platform</div>')
+        head_l, head_r = st.columns([5, 1])
+        with head_l:
+            H('<div class="hl-bot-title">Hirelyzer Assistant</div><div class="hl-bot-sub">Ask about the platform</div>')
+        with head_r:
+            if st.button("↻", key="hl_bot_refresh", help="Start a new conversation"):
+                _reset_bot_state()
+                st.rerun()
 
         for role, text in st.session_state.hl_bot_history:
             with st.chat_message("assistant" if role == "bot" else "user"):
@@ -1811,21 +1883,84 @@ def render_chatbot():
         # resume/interview/job-search/scam/Hirelyzer questions only.
         if _CHATBOT_LLM_AVAILABLE:
             st.divider()
-            user_msg = st.chat_input("Ask anything about resumes, interviews, jobs…", key="hl_bot_chat_input")
-            if user_msg:
-                # Build LLM context from the conversation so far (menu Q&A
-                # counts as valid context too — it's all on-topic).
-                llm_history = [
-                    {"role": "assistant" if role == "bot" else "user", "content": text}
-                    for role, text in st.session_state.hl_bot_history
-                ]
-                st.session_state.hl_bot_history.append(("user", user_msg))
-                with st.spinner("Thinking…"):
-                    reply = ask_chatbot(user_msg, llm_history)
-                st.session_state.hl_bot_history.append(("bot", reply))
-                st.rerun()
+
+            if "hl_bot_client_id" not in st.session_state:
+                st.session_state.hl_bot_client_id = _resolve_client_id()
+            client_id = st.session_state.hl_bot_client_id
+
+            allowed, remaining = check_rate_limit(client_id)
+
+            if not allowed:
+                st.caption(
+                    "You've reached the free-text chat limit for now — "
+                    "please try again later, or use the options above."
+                )
+            else:
+                user_msg = st.chat_input("Ask anything about resumes, interviews, jobs…", key="hl_bot_chat_input")
+                if user_msg:
+                    # Build LLM context from the conversation so far (menu Q&A
+                    # counts as valid context too — it's all on-topic).
+                    llm_history = [
+                        {"role": "assistant" if role == "bot" else "user", "content": text}
+                        for role, text in st.session_state.hl_bot_history
+                    ]
+                    st.session_state.hl_bot_history.append(("user", user_msg))
+                    record_message(client_id)
+                    with st.chat_message("assistant"):
+                        with st.spinner("Thinking…"):
+                            reply = ask_chatbot(user_msg, llm_history)
+                    st.session_state.hl_bot_history.append(("bot", reply))
+                    st.rerun()
+
+                # Only nudge the visitor once they're close to the cap —
+                # no need to clutter the UI early in the conversation.
+                if remaining <= 5:
+                    H(f'<div class="hl-bot-limit">{remaining} free-text message'
+                      f'{"s" if remaining != 1 else ""} left this hour.</div>')
         else:
             st.caption("Free-text chat is temporarily unavailable — use the options above.")
+
+        # ── Resume file conversion: .docx → .pdf, via headless LibreOffice
+        # (docx_to_pdf.py). Unrelated to the Groq chatbot above — no LLM
+        # involved, just a document-format conversion utility.
+        st.divider()
+        H('<div class="hl-bot-title" style="font-size:13px;">Convert resume to PDF</div>'
+          '<div class="hl-bot-sub">Upload a .docx and get a PDF back.</div>')
+
+        if not _DOCX_CONVERT_AVAILABLE or not soffice_available():
+            st.caption("PDF conversion isn't set up on this server yet.")
+        else:
+            uploaded = st.file_uploader(
+                "Upload .docx",
+                type=["docx"],
+                key="hl_bot_docx_upload",
+                label_visibility="collapsed",
+            )
+            if uploaded is not None:
+                file_bytes = uploaded.getvalue()
+                cache_key = hashlib.sha256(file_bytes).hexdigest()
+
+                # Cache the result in session_state keyed by file hash, so
+                # re-running the script (e.g. from a chat message elsewhere
+                # in the popover) doesn't re-convert the same file.
+                if st.session_state.get("hl_bot_pdf_cache_key") != cache_key:
+                    with st.spinner("Converting…"):
+                        pdf_bytes, err = convert_docx_to_pdf(file_bytes, uploaded.name)
+                    st.session_state.hl_bot_pdf_cache_key = cache_key
+                    st.session_state.hl_bot_pdf_bytes = pdf_bytes
+                    st.session_state.hl_bot_pdf_error = err
+
+                if st.session_state.get("hl_bot_pdf_error"):
+                    st.error(st.session_state.hl_bot_pdf_error)
+                elif st.session_state.get("hl_bot_pdf_bytes"):
+                    st.download_button(
+                        "⬇ Download PDF",
+                        data=st.session_state.hl_bot_pdf_bytes,
+                        file_name=f"{Path(uploaded.name).stem}.pdf",
+                        mime="application/pdf",
+                        key="hl_bot_pdf_download",
+                        use_container_width=True,
+                    )
 
 
 def render_js():
