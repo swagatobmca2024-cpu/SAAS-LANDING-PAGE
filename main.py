@@ -1056,7 +1056,7 @@ def job_cards():
     return out
 
 def checklist():
-    items = ["ATS score in seconds","Bias detection & rewrite","15 resume templates","Cover letter generator","Live job search","AI Interview Coach"]
+    items = ["ATS score in seconds","Bias detection & rewrite","15 resume templates","Cover letter generator","Live job search","AI Interview Coach","Job scam detection"]
     chk = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="#30d158" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
     return "".join('<div class="hl-check">'+chk+'<span>'+item+'</span></div>' for item in items)
 
@@ -1422,6 +1422,39 @@ def render_story_interview():
       '</div></div>'
       '</div></div></div>')
 
+def render_story_scam():
+    p = pills(["6 Live Network Probes","15-Signal Rule Engine","AI Deep Analysis","MCA Registry Verification","Blended Risk Score"])
+    H('<div class="hl-story-alt"><div class="hl-section"><div class="hl-story-grid">'
+      '<div style="order:2" class="hl-reveal">'
+      '<div class="hl-story-num">Feature 06 &mdash; Job Scam Detector</div>'
+      '<h2 class="hl-story-h">Know it\'s real <span class="hl-purp">before you apply</span></h2>'
+      '<p class="hl-story-p">Paste a job posting and Hirelyzer runs it through four detection layers in parallel: 6 live network probes (domain age, site reachability, typosquatting, free-email detection, MX mail server validation, and MCA company registry lookup), a 15-signal weighted rule engine, and a full AI deep-read of the listing text.</p>'
+      '<p class="hl-story-p">The results are combined into one blended risk score &mdash; 60% AI judgment, 25% rule signals, 15% live-probe penalty &mdash; so no single weak signal can produce a false sense of safety.</p>'
+      '<div class="hl-pills">' + p + '</div>'
+      '</div>'
+      '<div style="order:1" class="hl-reveal hl-reveal-delay-2"><div class="hl-panel">'
+      '<div class="hl-ptitle" style="justify-content:space-between">'
+      '<div style="display:flex;align-items:center;gap:8px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#ff9f0a" stroke-width="1.5" fill="none" stroke-linejoin="round"/></svg>Scam Risk Report</div>'
+      '<div class="hl-score-badge" style="background:rgba(255,69,58,0.12);border-color:rgba(255,69,58,0.3)"><svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="#ff453a"/></svg>High Risk &middot; 78/100</div>'
+      '</div>'
+      '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:rgba(245,245,247,0.34);font-weight:700;margin:4px 0 10px">Live probe results</div>'
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">'
+      '<div class="hl-check">' + chk_y() + '<span>MCA registry &mdash; no match</span></div>'
+      '<div class="hl-check">' + chk_p("&#33;") + '<span>Domain age &mdash; 12 days</span></div>'
+      '<div class="hl-check">' + chk_y() + '<span>Free-email recruiter</span></div>'
+      '<div class="hl-check">' + chk_n() + '<span>Site unreachable</span></div>'
+      '</div>'
+      '<div style="font-size:10px;color:rgba(245,245,247,0.34);font-weight:700;text-transform:uppercase;letter-spacing:.9px;margin-bottom:10px">Flagged language</div>'
+      '<div class="hl-words"><span class="wc wc-m">pay registration fee</span><span class="wc wc-m">urgent hiring</span><span class="wc wc-f">no interview needed</span></div>'
+      '<div style="padding:14px;background:rgba(255,69,58,0.06);border-radius:12px;border:1px solid rgba(255,69,58,0.18);margin-top:12px">'
+      '<div style="font-size:11px;font-weight:700;color:#ff453a;margin-bottom:6px;display:flex;align-items:center;gap:6px">'
+      '<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#ff453a" stroke-width="1.6" stroke-linejoin="round"/></svg>'
+      'Recommendation: Do not proceed</div>'
+      '<div style="font-size:12px;color:rgba(245,245,247,0.54);line-height:1.65">Company not found in official registry and requests an upfront fee &mdash; classic scam pattern.</div>'
+      '</div>'
+      '</div></div>'
+      '</div></div></div>')
+
 def render_testimonials():
     testimonials = [
         ("&ldquo;Got my ATS score up from 52 to 88 in one session. Landed 3 interviews in a week.&rdquo;", "Arjun M.", "SWE &mdash; Google", "#0a84ff"),
@@ -1603,6 +1636,210 @@ def render_footer():
       '<a href="mailto:' + SUPPORT_EMAIL + '">' + SUPPORT_EMAIL + '</a>'
       '<a href="' + APP_URL + '" target="_blank">Open App &rarr;</a>'
       '</div></div></footer>')
+
+# ─── FLOATING FAQ CHATBOT ─────────────────────────────────────────────────────
+# Pure client-side decision-tree bot — no backend, no API calls, just canned
+# Q&A about the website itself. Matches the existing H()/CSS() injection pattern
+# used throughout this file, and reuses the same design tokens (colors, fonts).
+def render_chatbot():
+    CSS("""
+    #hl-bot-fab {
+      position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+      width: 56px; height: 56px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--blue), var(--purple));
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 4px 24px rgba(10,132,255,0.35), 0 2px 8px rgba(0,0,0,0.4);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    #hl-bot-fab:hover { transform: scale(1.06); box-shadow: 0 6px 28px rgba(10,132,255,0.5), 0 2px 8px rgba(0,0,0,0.4); }
+    #hl-bot-fab svg { width: 26px; height: 26px; }
+    #hl-bot-fab .hl-bot-fab-close { display: none; }
+    #hl-bot-fab.open .hl-bot-fab-chat { display: none; }
+    #hl-bot-fab.open .hl-bot-fab-close { display: block; }
+
+    #hl-bot-panel {
+      position: fixed; bottom: 92px; right: 24px; z-index: 9999;
+      width: 360px; max-width: calc(100vw - 32px);
+      height: 520px; max-height: calc(100vh - 140px);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.55);
+      display: none; flex-direction: column; overflow: hidden;
+      font-family: 'Sora', sans-serif;
+    }
+    #hl-bot-panel.open { display: flex; animation: hlBotIn 0.22s ease; }
+    @keyframes hlBotIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+    #hl-bot-header {
+      padding: 16px 18px; background: linear-gradient(135deg, rgba(10,132,255,0.14), rgba(191,90,242,0.10));
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+    }
+    #hl-bot-header .hl-bot-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+    #hl-bot-header .hl-bot-title { color: var(--fg); font-weight: 700; font-size: 14.5px; letter-spacing: -0.2px; }
+    #hl-bot-header .hl-bot-sub { color: var(--fg2); font-size: 11.5px; margin-top: 1px; }
+
+    #hl-bot-messages {
+      flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 10px;
+    }
+    #hl-bot-messages::-webkit-scrollbar { width: 5px; }
+    #hl-bot-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+
+    .hl-bot-msg { max-width: 84%; padding: 10px 13px; border-radius: 13px; font-size: 13px; line-height: 1.5; }
+    .hl-bot-msg.bot { background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--fg); align-self: flex-start; border-bottom-left-radius: 3px; }
+    .hl-bot-msg.user { background: var(--blue); color: #fff; align-self: flex-end; border-bottom-right-radius: 3px; font-weight: 500; }
+    .hl-bot-msg a { color: var(--sky); }
+
+    #hl-bot-options { padding: 10px 14px 16px; display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; border-top: 1px solid var(--border); }
+    .hl-bot-opt {
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--fg);
+      padding: 9px 12px; border-radius: 10px; font-size: 12.5px; cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease; text-align: left;
+    }
+    .hl-bot-opt:hover { background: rgba(10,132,255,0.12); border-color: rgba(10,132,255,0.35); }
+
+    @media (max-width: 480px) {
+      #hl-bot-panel { right: 16px; left: 16px; width: auto; bottom: 84px; }
+      #hl-bot-fab { right: 16px; bottom: 16px; }
+    }
+    """)
+
+    H("""
+    <div id="hl-bot-fab" onclick="hlBotToggle()">
+      <svg class="hl-bot-fab-chat" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1 1 0 011 1v10a1 1 0 01-1 1H8l-4 4V6a1 1 0 011-1z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><circle cx="9" cy="11" r="1" fill="#fff"/><circle cx="12" cy="11" r="1" fill="#fff"/><circle cx="15" cy="11" r="1" fill="#fff"/></svg>
+      <svg class="hl-bot-fab-close" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+    </div>
+
+    <div id="hl-bot-panel">
+      <div id="hl-bot-header">
+        <div class="hl-bot-dot"></div>
+        <div>
+          <div class="hl-bot-title">Hirelyzer Assistant</div>
+          <div class="hl-bot-sub">Ask about the platform</div>
+        </div>
+      </div>
+      <div id="hl-bot-messages"></div>
+      <div id="hl-bot-options"></div>
+    </div>
+    """)
+
+    H("""
+    <script>
+    (function(){
+
+    var HL_BOT_TREE = {
+      "menu": {
+        "options": [
+          "What is Hirelyzer?",
+          "Is it free?",
+          "What can it do?",
+          "Is my data private?",
+          "What file formats are supported?",
+          "How do I get started?",
+          "Contact support"
+        ]
+      },
+      "What is Hirelyzer?": {
+        "answer": "Hirelyzer is an AI-powered career platform \\u2014 it analyzes and improves your resume, helps you build a polished resume/cover letter, runs mock interviews with an AI coach, searches live job listings, and flags scam job postings, all in one place.",
+        "options": ["What can it do?", "Is it free?", "How do I get started?", "\\u2b05 Back to menu"]
+      },
+      "Is it free?": {
+        "answer": "Yes \\u2014 core features including ATS scoring, bias detection, and job search are fully free. No credit card required to get started.",
+        "options": ["\\u2b05 Back to menu"]
+      },
+      "What can it do?": {
+        "answer": "Five main tools: <b>Resume Analysis</b> (ATS scoring + bias detection), <b>Resume Builder</b> (15+ templates), <b>AI Interview Coach</b> (adaptive mock interviews with real-time scoring), <b>Job Search</b> (live listings + salary data), and <b>Job Scam Detector</b> (verifies company legitimacy before you apply).",
+        "options": ["How does the AI Interview Coach work?", "How does the Resume Builder work?", "How does the Job Scam Detector work?", "\\u2b05 Back to menu"]
+      },
+      "How does the AI Interview Coach work?": {
+        "answer": "Upload your resume and Hirelyzer generates tailored interview questions from your actual experience. You answer in free text, and the AI scores you across knowledge, communication, and relevance \\u2014 with adaptive follow-up questions on Hard difficulty that get tougher based on how you answer.",
+        "options": ["\\u2b05 Back to menu"]
+      },
+      "How does the Resume Builder work?": {
+        "answer": "Choose from 15+ professionally designed templates, write or AI-rewrite your content, and export straight to PDF or DOCX \\u2014 a matching cover letter builder is included too.",
+        "options": ["\\u2b05 Back to menu"]
+      },
+      "How does the Job Scam Detector work?": {
+        "answer": "Four detection layers run together: 6 live network probes (domain age, site reachability, typosquatting, free-email detection, MX mail server check, and MCA company registry lookup), a 15-signal weighted rule engine, and a full AI deep-read of the listing text \\u2014 all blended into one risk score (60% AI, 25% rules, 15% probe penalty) so no single weak signal misleads you.",
+        "options": ["\\u2b05 Back to menu"]
+      },
+      "Is my data private?": {
+        "answer": "Your resume is processed securely and never shared with third parties or recruiters. You control your data entirely.",
+        "options": ["\\u2b05 Back to menu"]
+      },
+      "What file formats are supported?": {
+        "answer": "PDF is the primary format \\u2014 the parser handles standard, multi-column, and scanned (OCR) resumes. You can export to DOCX or PDF from the Resume Builder.",
+        "options": ["\\u2b05 Back to menu"]
+      },
+      "How do I get started?": {
+        "answer": "Just click the \\u201cGet Started\\u201d button at the top of the page \\u2014 it's free and takes about a minute. <a href=\\"__APP_URL__\\" target=\\"_blank\\">Open Hirelyzer \\u2192</a>",
+        "options": ["\\u2b05 Back to menu"]
+      },
+      "Contact support": {
+        "answer": "Reach us anytime at <a href=\\"mailto:__SUPPORT_EMAIL__\\">__SUPPORT_EMAIL__</a>.",
+        "options": ["\\u2b05 Back to menu"]
+      }
+    };
+
+    var hlBotOpened = false;
+    var hlBotGreeted = false;
+
+    window.hlBotToggle = function(){
+      var panel = document.getElementById("hl-bot-panel");
+      var fab = document.getElementById("hl-bot-fab");
+      hlBotOpened = !hlBotOpened;
+      panel.classList.toggle("open", hlBotOpened);
+      fab.classList.toggle("open", hlBotOpened);
+      if (hlBotOpened && !hlBotGreeted) {
+        hlBotGreeted = true;
+        hlBotAddMessage("bot", "Hi! I'm the Hirelyzer assistant. Ask me anything about the platform \\u2014 pick a question below.");
+        hlBotShowOptions(HL_BOT_TREE["menu"].options);
+      }
+    };
+
+    function hlBotAddMessage(role, html){
+      var messages = document.getElementById("hl-bot-messages");
+      var div = document.createElement("div");
+      div.className = "hl-bot-msg " + role;
+      div.innerHTML = html;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function hlBotShowOptions(options){
+      var optsEl = document.getElementById("hl-bot-options");
+      optsEl.innerHTML = "";
+      options.forEach(function(optText){
+        var btn = document.createElement("div");
+        btn.className = "hl-bot-opt";
+        btn.textContent = optText;
+        btn.onclick = function(){ hlBotSelect(optText); };
+        optsEl.appendChild(btn);
+      });
+    }
+
+    function hlBotSelect(optText){
+      if (optText === "\\u2b05 Back to menu") {
+        hlBotAddMessage("bot", "What else would you like to know?");
+        hlBotShowOptions(HL_BOT_TREE["menu"].options);
+        return;
+      }
+      var node = HL_BOT_TREE[optText];
+      if (!node) return;
+      hlBotAddMessage("user", optText);
+      var answer = node.answer;
+      setTimeout(function(){
+        hlBotAddMessage("bot", answer);
+        hlBotShowOptions(node.options);
+      }, 260);
+    }
+
+    })();
+    </script>
+    """.replace("__APP_URL__", APP_URL).replace("__SUPPORT_EMAIL__", SUPPORT_EMAIL))
+
 
 def render_js():
     H('<script>'
@@ -1838,6 +2075,7 @@ render_story_bias()
 render_story_builder()
 render_story_career()
 render_story_interview()
+render_story_scam()
 render_testimonials()
 render_compare()
 render_highlights()
@@ -1845,4 +2083,5 @@ render_faq()
 render_cta()
 render_contact_section()
 render_footer()
+render_chatbot()
 render_js()
