@@ -46,6 +46,9 @@ MAX_HISTORY_TURNS  = 6                # prior user/assistant turns kept as conte
 MAX_REPLY_TOKENS    = 400
 REQUEST_TIMEOUT_S    = 20
 
+RATE_LIMIT_MAX_MESSAGES   = 15        # free-text messages allowed per client...
+RATE_LIMIT_WINDOW_SECONDS = 60 * 60   # ...within this rolling window
+
 _QUOTA_SIGNALS = ("quota", "rate limit", "429", "too many requests", "rate_limit_exceeded")
 _DEAD_SIGNALS  = ("invalid api key", "unauthorized", "401", "403", "authentication", "invalid_api_key")
 
@@ -77,6 +80,9 @@ _mem_cache: dict = {}      # hash -> (response, ts)
 
 _counter_lock = threading.Lock()
 _counter = 0
+
+_rate_lock = threading.Lock()
+_rate_counts: dict = {}    # client_id -> {"window_start": float, "count": int}
 
 
 # ── Key loading ─────────────────────────────────────────────────────────────
@@ -145,6 +151,49 @@ def _pick_start_index(n: int) -> int:
         idx = _counter % n
         _counter += 1
     return idx
+
+
+# ── Per-client rate limiting (in-memory, per-worker) ────────────────────────
+# Keyed by whatever the caller passes as client_id — main.py passes the
+# visitor's IP when it can get one, falling back to the Streamlit session id
+# otherwise. Deliberately simple (module-level dict, no persistence): this
+# resets whenever the worker restarts/redeploys, and doesn't sync across
+# multiple worker processes if the app is ever scaled horizontally. It's a
+# cost/abuse speed bump for a small landing-page chatbot, not a hardened
+# rate limiter — swap in a DB or Redis-backed version if that ever matters.
+def _prune_rate_counts(now: float):
+    # Opportunistic cleanup so _rate_counts doesn't grow unbounded over a
+    # long-running process. Called from record_message, not on every check.
+    expired = [cid for cid, e in _rate_counts.items() if (now - e["window_start"]) >= RATE_LIMIT_WINDOW_SECONDS]
+    for cid in expired:
+        _rate_counts.pop(cid, None)
+
+
+def check_rate_limit(client_id: str) -> tuple:
+    """
+    Returns (allowed: bool, remaining: int) for this client within the
+    current window. Read-only — does not record a message. Call
+    record_message() separately once the message actually goes through.
+    """
+    now = time.time()
+    with _rate_lock:
+        entry = _rate_counts.get(client_id)
+        if not entry or (now - entry["window_start"]) >= RATE_LIMIT_WINDOW_SECONDS:
+            return True, RATE_LIMIT_MAX_MESSAGES
+        remaining = RATE_LIMIT_MAX_MESSAGES - entry["count"]
+        return remaining > 0, max(remaining, 0)
+
+
+def record_message(client_id: str):
+    """Call once per free-text message that actually reaches ask_chatbot()."""
+    now = time.time()
+    with _rate_lock:
+        entry = _rate_counts.get(client_id)
+        if not entry or (now - entry["window_start"]) >= RATE_LIMIT_WINDOW_SECONDS:
+            _rate_counts[client_id] = {"window_start": now, "count": 1}
+        else:
+            entry["count"] += 1
+        _prune_rate_counts(now)
 
 
 # ── Response cache (in-memory, per-worker) ──────────────────────────────────
