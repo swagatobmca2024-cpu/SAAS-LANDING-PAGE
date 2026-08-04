@@ -1,5 +1,7 @@
 import math
+import json
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="HIRELYZER — Intelligent Career Platform",
@@ -16,6 +18,32 @@ def H(s):
 
 def CSS(s):
     st.markdown("<style>" + s + "</style>", unsafe_allow_html=True)
+
+def JS(code):
+    """
+    Inject and RUN JavaScript in the real Streamlit page.
+    st.markdown(..., unsafe_allow_html=True) inserts <script> tags via
+    innerHTML, which browsers never execute. components.html() runs code,
+    but inside a sandboxed iframe with no access to the main page's DOM.
+    This combines both: it runs inside the iframe just long enough to
+    create a real <script> element on window.parent.document and append
+    it there — a script added via appendChild DOES execute, and it runs
+    in the main page's context, so it can see/attach to elements that
+    were rendered with H()/st.markdown() and define window-level
+    functions that onclick="..." handlers on those elements can call.
+    """
+    payload = json.dumps(code)
+    components.html(
+        f"""<script>
+        (function() {{
+            var s = window.parent.document.createElement('script');
+            s.textContent = {payload};
+            window.parent.document.body.appendChild(s);
+        }})();
+        </script>""",
+        height=0,
+        width=0,
+    )
 
 # ─── CSS ──────────────────────────────────────────────────────────────────────
 CSS("""
@@ -1725,8 +1753,7 @@ def render_chatbot():
     </div>
     """)
 
-    H("""
-    <script>
+    JS("""
     (function(){
 
     var HL_BOT_TREE = {
@@ -1837,13 +1864,11 @@ def render_chatbot():
     }
 
     })();
-    </script>
     """.replace("__APP_URL__", APP_URL).replace("__SUPPORT_EMAIL__", SUPPORT_EMAIL))
 
 
 def render_js():
-    H('<script>'
-      '(function(){'
+    JS('(function(){'
 
       # ── Scroll progress bar ──
       'var sp=document.getElementById("sp");'
@@ -2062,8 +2087,7 @@ def render_js():
       'window.addEventListener("resize",resize,{passive:true});'
       '})();'
 
-      '})();'
-      '</script>')
+      '})();')
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 render_banner()
