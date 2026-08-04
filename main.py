@@ -1838,14 +1838,24 @@ def render_chatbot():
     """)
 
     def _reset_bot_state():
-        # Resets the visible conversation only — the rate limit is tracked
-        # server-side by client_id (see check_rate_limit/record_message in
-        # chatbot_llm.py) and is deliberately NOT reset here, or refreshing
-        # the chat would also reset the abuse guard.
+        # Resets the visible conversation AND the uploaded-resume / PDF
+        # state, so a "new conversation" doesn't leave a stale converted
+        # file sitting around. The rate limit is tracked server-side by
+        # client_id (see check_rate_limit/record_message in chatbot_llm.py)
+        # and is deliberately NOT reset here, or refreshing the chat would
+        # also reset the abuse guard.
         st.session_state.hl_bot_node = "menu"
         st.session_state.hl_bot_history = [
             ("bot", "Hi! I'm the Hirelyzer assistant. Ask me anything about the platform — pick a question below.")
         ]
+        st.session_state.hl_bot_last_was_freeform = False
+        st.session_state.hl_bot_pdf_cache_key = None
+        st.session_state.hl_bot_pdf_bytes = None
+        st.session_state.hl_bot_pdf_error = None
+        # st.file_uploader has no direct "clear" call — bumping this and
+        # folding it into the widget's key forces a fresh widget instance
+        # with no file selected, which is the supported way to reset it.
+        st.session_state.hl_bot_upload_gen = st.session_state.get("hl_bot_upload_gen", 0) + 1
 
     if "hl_bot_node" not in st.session_state:
         _reset_bot_state()
@@ -1859,9 +1869,30 @@ def render_chatbot():
                 _reset_bot_state()
                 st.rerun()
 
+        H('<div id="hl-bot-messages-top"></div>')
         for role, text in st.session_state.hl_bot_history:
             with st.chat_message("assistant" if role == "bot" else "user"):
                 st.markdown(text)
+        H('<div id="hl-bot-messages-bottom"></div>')
+
+        # Auto-scroll the popover to the newest message. Only fires when
+        # the message count actually changed since the last render — not
+        # on every rerun — so it doesn't yank a visitor back down if
+        # they've scrolled up to reread something and then interact with
+        # something unrelated elsewhere on the page.
+        if st.session_state.get("hl_bot_scroll_count") != len(st.session_state.hl_bot_history):
+            st.session_state.hl_bot_scroll_count = len(st.session_state.hl_bot_history)
+            JS("""
+            (function(){
+                function hlBotScroll(){
+                    var el = window.parent.document.getElementById('hl-bot-messages-bottom');
+                    if (el) { el.scrollIntoView({behavior: 'instant', block: 'nearest'}); }
+                }
+                hlBotScroll();
+                setTimeout(hlBotScroll, 60);
+                setTimeout(hlBotScroll, 200);
+            })();
+            """)
 
         node_key = st.session_state.hl_bot_node
         node = HL_BOT_TREE.get(node_key, HL_BOT_TREE["menu"])
@@ -1869,6 +1900,7 @@ def render_chatbot():
 
         for i, opt in enumerate(options):
             if st.button(opt, key=f"hlbot_opt_{node_key}_{i}", use_container_width=True):
+                st.session_state.hl_bot_last_was_freeform = False
                 if opt == "⬅ Back to menu":
                     st.session_state.hl_bot_history.append(("bot", "What else would you like to know?"))
                     st.session_state.hl_bot_node = "menu"
@@ -1888,6 +1920,19 @@ def render_chatbot():
                 st.session_state.hl_bot_client_id = _resolve_client_id()
             client_id = st.session_state.hl_bot_client_id
 
+            def _ask_and_append(msg: str):
+                llm_history = [
+                    {"role": "assistant" if role == "bot" else "user", "content": text}
+                    for role, text in st.session_state.hl_bot_history
+                ]
+                st.session_state.hl_bot_history.append(("user", msg))
+                record_message(client_id)
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking…"):
+                        reply = ask_chatbot(msg, llm_history)
+                st.session_state.hl_bot_history.append(("bot", reply))
+                st.session_state.hl_bot_last_was_freeform = True
+
             allowed, remaining = check_rate_limit(client_id)
 
             if not allowed:
@@ -1898,19 +1943,27 @@ def render_chatbot():
             else:
                 user_msg = st.chat_input("Ask anything about resumes, interviews, jobs…", key="hl_bot_chat_input")
                 if user_msg:
-                    # Build LLM context from the conversation so far (menu Q&A
-                    # counts as valid context too — it's all on-topic).
-                    llm_history = [
-                        {"role": "assistant" if role == "bot" else "user", "content": text}
-                        for role, text in st.session_state.hl_bot_history
-                    ]
-                    st.session_state.hl_bot_history.append(("user", user_msg))
-                    record_message(client_id)
-                    with st.chat_message("assistant"):
-                        with st.spinner("Thinking…"):
-                            reply = ask_chatbot(user_msg, llm_history)
-                    st.session_state.hl_bot_history.append(("bot", reply))
+                    _ask_and_append(user_msg)
                     st.rerun()
+
+                # Follow-up chips: only after a free-text answer (not after
+                # a menu-tree click, which already offers its own "Back to
+                # menu" option), and only while the visitor still has room
+                # under the rate limit for "Tell me more" to make a call.
+                if st.session_state.get("hl_bot_last_was_freeform"):
+                    chip_l, chip_r = st.columns(2)
+                    with chip_l:
+                        if remaining > 0 and st.button(
+                            "Tell me more", key="hl_bot_chip_more", use_container_width=True
+                        ):
+                            _ask_and_append("Can you go into more detail on that?")
+                            st.rerun()
+                    with chip_r:
+                        if st.button("⬅ Back to menu", key="hl_bot_chip_menu", use_container_width=True):
+                            st.session_state.hl_bot_history.append(("bot", "What else would you like to know?"))
+                            st.session_state.hl_bot_node = "menu"
+                            st.session_state.hl_bot_last_was_freeform = False
+                            st.rerun()
 
                 # Only nudge the visitor once they're close to the cap —
                 # no need to clutter the UI early in the conversation.
@@ -1930,10 +1983,11 @@ def render_chatbot():
         if not _DOCX_CONVERT_AVAILABLE or not soffice_available():
             st.caption("PDF conversion isn't set up on this server yet.")
         else:
+            upload_gen = st.session_state.get("hl_bot_upload_gen", 0)
             uploaded = st.file_uploader(
                 "Upload .docx",
                 type=["docx"],
-                key="hl_bot_docx_upload",
+                key=f"hl_bot_docx_upload_{upload_gen}",
                 label_visibility="collapsed",
             )
             if uploaded is not None:
