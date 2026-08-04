@@ -1861,6 +1861,36 @@ def render_chatbot():
       border-color: var(--fg2) !important;
     }
     .st-key-hl_bot_refresh button p, .st-key-hl_bot_expand button p { font-size: 13px !important; margin: 0 !important; }
+
+    /* Custom tooltips for the header icon buttons — native Streamlit
+       `help=` tooltips get clipped here because these buttons sit right at
+       the popover's edge, which itself is anchored to the screen corner,
+       leaving no room for the browser's own tooltip to expand into. This
+       version is self-positioned (anchored to the button's own right edge,
+       opening downward) so it always stays inside the popover regardless
+       of how close to the edge the button is. */
+    .st-key-hl_bot_expand, .st-key-hl_bot_refresh { position: relative; }
+    .st-key-hl_bot_expand::after, .st-key-hl_bot_refresh::after {
+      position: absolute;
+      top: calc(100% + 6px); right: 0;
+      background: var(--surface3, #1c1c1e);
+      color: var(--fg);
+      font-size: 11px;
+      line-height: 1.3;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+      z-index: 1000000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s ease;
+    }
+    .st-key-hl_bot_expand:hover::after, .st-key-hl_bot_refresh:hover::after {
+      opacity: 1;
+    }
+    .st-key-hl_bot_expand::after { content: "Expand / collapse"; }
+    .st-key-hl_bot_refresh::after { content: "Start a new conversation"; }
     """)
 
     def _reset_bot_state():
@@ -1892,12 +1922,11 @@ def render_chatbot():
             H('<div class="hl-bot-title">Hirelyzer Assistant</div><div class="hl-bot-sub">Ask about the platform</div>')
         with head_m:
             expand_icon = "⤡" if st.session_state.hl_bot_expanded else "⛶"
-            expand_help = "Collapse" if st.session_state.hl_bot_expanded else "Expand to full view"
-            if st.button(expand_icon, key="hl_bot_expand", help=expand_help):
+            if st.button(expand_icon, key="hl_bot_expand"):
                 st.session_state.hl_bot_expanded = not st.session_state.hl_bot_expanded
                 st.rerun()
         with head_r:
-            if st.button("↻", key="hl_bot_refresh", help="Start a new conversation"):
+            if st.button("↻", key="hl_bot_refresh"):
                 _reset_bot_state()
                 st.rerun()
 
