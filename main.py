@@ -3,6 +3,15 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
+try:
+    from chatbot_llm import ask_chatbot
+    _CHATBOT_LLM_AVAILABLE = True
+except Exception:
+    # chatbot_llm.py missing, or its `openai` dependency isn't installed yet,
+    # or GROQ_API_KEYS isn't set — degrade gracefully to menu-only mode
+    # instead of crashing the whole landing page.
+    _CHATBOT_LLM_AVAILABLE = False
+
 st.set_page_config(
     page_title="HIRELYZER — Intelligent Career Platform",
     page_icon="⬡",
@@ -1796,6 +1805,27 @@ def render_chatbot():
                     st.session_state.hl_bot_history.append(("bot", HL_BOT_TREE[opt]["answer"]))
                     st.session_state.hl_bot_node = opt
                 st.rerun()
+
+        # ── Free-text Q&A, backed by Groq (gpt-oss-120b) with a topic
+        # guardrail (see chatbot_llm.SYSTEM_PROMPT) restricting it to
+        # resume/interview/job-search/scam/Hirelyzer questions only.
+        if _CHATBOT_LLM_AVAILABLE:
+            st.divider()
+            user_msg = st.chat_input("Ask anything about resumes, interviews, jobs…", key="hl_bot_chat_input")
+            if user_msg:
+                # Build LLM context from the conversation so far (menu Q&A
+                # counts as valid context too — it's all on-topic).
+                llm_history = [
+                    {"role": "assistant" if role == "bot" else "user", "content": text}
+                    for role, text in st.session_state.hl_bot_history
+                ]
+                st.session_state.hl_bot_history.append(("user", user_msg))
+                with st.spinner("Thinking…"):
+                    reply = ask_chatbot(user_msg, llm_history)
+                st.session_state.hl_bot_history.append(("bot", reply))
+                st.rerun()
+        else:
+            st.caption("Free-text chat is temporarily unavailable — use the options above.")
 
 
 def render_js():
