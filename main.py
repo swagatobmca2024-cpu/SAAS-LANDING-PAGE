@@ -1788,6 +1788,39 @@ def render_chatbot():
     # drop. We just restyle the trigger button with CSS (via its `key`,
     # which Streamlit exposes as the stable class `.st-key-<key>`) to look
     # like a floating chat bubble pinned to the corner.
+    if "hl_bot_expanded" not in st.session_state:
+        st.session_state.hl_bot_expanded = False
+
+    if st.session_state.hl_bot_expanded:
+        # Full-view mode: centered, large, fixed overlay — overrides the
+        # anchored-near-the-trigger positioning Streamlit gives popovers by
+        # default. Mainly for wide content (tables, longer answers) that
+        # gets cut off at 340px.
+        _popover_body_css = """
+        div[data-testid="stPopoverBody"] {
+          position: fixed !important;
+          top: 5vh !important; left: 50% !important;
+          transform: translateX(-50%) !important;
+          width: min(720px, 92vw) !important; max-width: 92vw !important;
+          max-height: 90vh !important;
+          background: var(--surface2) !important;
+          border: 1px solid var(--border) !important;
+          border-radius: 18px !important;
+          box-shadow: 0 12px 48px rgba(0,0,0,0.55) !important;
+        }
+        """
+    else:
+        _popover_body_css = """
+        div[data-testid="stPopoverBody"] {
+          width: 340px !important; max-width: calc(100vw - 32px) !important;
+          max-height: 65vh !important;
+          background: var(--surface2) !important;
+          border: 1px solid var(--border) !important;
+          border-radius: 18px !important;
+          box-shadow: 0 12px 48px rgba(0,0,0,0.55) !important;
+        }
+        """
+
     CSS("""
     .st-key-hl_bot_popover {
       position: fixed !important;
@@ -1808,19 +1841,12 @@ def render_chatbot():
     .st-key-hl_bot_popover button:hover { transform: scale(1.06); }
     .st-key-hl_bot_popover button p { font-size: 22px !important; margin: 0 !important; }
 
-    div[data-testid="stPopoverBody"] {
-      width: 340px !important; max-width: calc(100vw - 32px) !important;
-      max-height: 65vh !important;
-      background: var(--surface2) !important;
-      border: 1px solid var(--border) !important;
-      border-radius: 18px !important;
-      box-shadow: 0 12px 48px rgba(0,0,0,0.55) !important;
-    }
+    """ + _popover_body_css + """
     .hl-bot-title { color: var(--fg); font-weight: 700; font-size: 14.5px; }
     .hl-bot-sub { color: var(--fg2); font-size: 11.5px; margin-bottom: 8px; }
     .hl-bot-header { display: flex; align-items: flex-start; justify-content: space-between; }
     .hl-bot-limit { color: var(--fg2); font-size: 11px; margin-top: 2px; }
-    .st-key-hl_bot_refresh button {
+    .st-key-hl_bot_refresh button, .st-key-hl_bot_expand button {
       width: 28px !important; height: 28px !important;
       border-radius: 50% !important;
       background: transparent !important;
@@ -1830,11 +1856,11 @@ def render_chatbot():
       font-size: 13px !important;
       color: var(--fg2) !important;
     }
-    .st-key-hl_bot_refresh button:hover {
+    .st-key-hl_bot_refresh button:hover, .st-key-hl_bot_expand button:hover {
       color: var(--fg) !important;
       border-color: var(--fg2) !important;
     }
-    .st-key-hl_bot_refresh button p { font-size: 13px !important; margin: 0 !important; }
+    .st-key-hl_bot_refresh button p, .st-key-hl_bot_expand button p { font-size: 13px !important; margin: 0 !important; }
     """)
 
     def _reset_bot_state():
@@ -1861,9 +1887,15 @@ def render_chatbot():
         _reset_bot_state()
 
     with st.popover("💬", key="hl_bot_popover"):
-        head_l, head_r = st.columns([5, 1])
+        head_l, head_m, head_r = st.columns([5, 1, 1])
         with head_l:
             H('<div class="hl-bot-title">Hirelyzer Assistant</div><div class="hl-bot-sub">Ask about the platform</div>')
+        with head_m:
+            expand_icon = "⤡" if st.session_state.hl_bot_expanded else "⛶"
+            expand_help = "Collapse" if st.session_state.hl_bot_expanded else "Expand to full view"
+            if st.button(expand_icon, key="hl_bot_expand", help=expand_help):
+                st.session_state.hl_bot_expanded = not st.session_state.hl_bot_expanded
+                st.rerun()
         with head_r:
             if st.button("↻", key="hl_bot_refresh", help="Start a new conversation"):
                 _reset_bot_state()
