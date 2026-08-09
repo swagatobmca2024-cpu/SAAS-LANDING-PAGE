@@ -48,6 +48,13 @@ MAX_REPLY_TOKENS    = 900             # was 400 — too small for table/rubric-s
                                        # mid-sentence by Groq's max_tokens cutoff
 REQUEST_TIMEOUT_S    = 20
 
+MAX_USER_MESSAGE_CHARS = 1500         # guards against huge pastes burning tokens
+                                       # or being used to probe/stress the model —
+                                       # rejected before any API call is made
+
+SCOPE_CHECK_MAX_TOKENS = 3            # the on-topic classifier only needs to
+                                       # return a single YES/NO token
+
 RATE_LIMIT_MAX_MESSAGES   = 15        # free-text messages allowed per client...
 RATE_LIMIT_WINDOW_SECONDS = 60 * 60   # ...within this rolling window
 
@@ -70,6 +77,25 @@ Keep answers concise and practical: 2-4 sentences for simple questions, short bu
 
 Formatting: respond in plain Markdown only — never use raw HTML tags (no <br>, <div>, <b>, etc.), including inside tables. If a table cell needs a line break, just keep the cell to one short phrase instead. If you use a table, keep it small (at most 3-4 rows, short cells) so the full answer fits comfortably within a short response.
 """
+
+# ── Second line of defense: output-side scope check ────────────────────────
+# SYSTEM_PROMPT is instruction-following, not a hard technical block — a
+# sufficiently creative prompt (roleplay framing, translated request, etc.)
+# could still get the model to answer something off-scope. This runs a
+# second, tiny classifier call against the model's own reply and swaps in a
+# canned decline if it drifted. Fails OPEN (keeps the original reply) on any
+# classifier error, so a classifier hiccup never blocks a legitimate answer.
+SCOPE_CLASSIFIER_PROMPT = """You are a strict content classifier for a career-platform support chatbot.
+The chatbot is only allowed to discuss: resumes, job interviews, job searching, job scams, and the Hirelyzer platform (or politely decline anything else).
+Given the chatbot reply below, answer with exactly one word:
+YES — if the reply stays within that scope (including a polite decline/refusal of an off-topic question).
+NO — if the reply provides substantive help or information on something outside that scope (e.g. general programming help, homework answers, unrelated trivia, medical/legal/financial advice unrelated to careers, current events, etc).
+Answer with exactly one word, YES or NO, nothing else."""
+
+OFF_TOPIC_FALLBACK = (
+    "I can only help with resumes, interviews, job search, job scams, and the "
+    "Hirelyzer platform — could you rephrase your question around one of those?"
+)
 
 # ── In-memory state (module-level, shared per worker process) ─────────────
 _key_lock = threading.Lock()
@@ -221,6 +247,30 @@ def _cache_set(messages: list, response: str):
         _mem_cache[key] = (response, time.time())
 
 
+def _is_on_topic(reply: str, api_key: str) -> bool:
+    """
+    Tiny secondary classifier call (max_tokens=3, temperature=0) that checks
+    whether the assistant's own reply stayed in scope. Fails OPEN — any
+    exception (timeout, bad key, malformed response, etc.) is treated as
+    "on topic" so a classifier problem never blocks a legitimate answer.
+    """
+    try:
+        client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL, timeout=REQUEST_TIMEOUT_S)
+        resp = client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": SCOPE_CLASSIFIER_PROMPT},
+                {"role": "user", "content": reply},
+            ],
+            temperature=0,
+            max_tokens=SCOPE_CHECK_MAX_TOKENS,
+        )
+        verdict = (resp.choices[0].message.content or "").strip().upper()
+        return not verdict.startswith("NO")
+    except Exception:
+        return True
+
+
 # ── Single call ──────────────────────────────────────────────────────────────
 def _call_groq(messages: list, api_key: str) -> str:
     client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL, timeout=REQUEST_TIMEOUT_S)
@@ -238,6 +288,10 @@ def _call_groq(messages: list, api_key: str) -> str:
     # complete answer.
     if choice.finish_reason == "length":
         content = content.rstrip() + "\n\n*(Trimmed for length — ask me to continue if you'd like more detail.)*"
+
+    if not _is_on_topic(content, api_key):
+        content = OFF_TOPIC_FALLBACK
+
     return content
 
 
@@ -252,6 +306,17 @@ def ask_chatbot(user_message: str, history: Optional[list] = None) -> str:
     key failed. Never raises.
     """
     history = history or []
+
+    # Reject oversized pastes before touching the cache, key pool, or API —
+    # no point spending tokens/quota on something that's almost certainly
+    # not a real question.
+    if len(user_message) > MAX_USER_MESSAGE_CHARS:
+        return (
+            f"That message is a bit long ({len(user_message)} characters) — "
+            f"could you shorten it to under {MAX_USER_MESSAGE_CHARS} characters "
+            "and try again?"
+        )
+
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages += history[-(MAX_HISTORY_TURNS * 2):]
     messages.append({"role": "user", "content": user_message})
