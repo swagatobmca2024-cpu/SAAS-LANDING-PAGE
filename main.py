@@ -238,6 +238,23 @@ CSS("""
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Respect the visitor's OS-level "reduce motion" setting: kill infinite/
+   decorative animation and jump reveal-on-scroll content straight to its
+   final state instead of leaving it hidden waiting for a transition that
+   will never play. JS-driven effects (magnetic buttons, tilt cards,
+   cursor spotlight, particle canvas) are separately gated on the same
+   media query further down in render_js(). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .hl-reveal { opacity: 1 !important; transform: none !important; }
+}
+
+
 html, body,
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"] {
@@ -580,11 +597,24 @@ div[data-testid="stMarkdownContainer"] > p { margin: 0 !important; }
   border-radius: 100px; background: rgba(255,255,255,0.04); color: var(--fg);
   font-size: 15px; font-weight: 600; text-decoration: none; letter-spacing: -0.2px;
   border: 1px solid rgba(255,255,255,0.1);
-  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
-  backdrop-filter: blur(8px);
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s, transform 0.15s;
+  backdrop-filter: blur(8px); position: relative; overflow: hidden;
 }
 .hl-btn-g:hover { border-color: rgba(255,255,255,0.22); background: rgba(255,255,255,0.07); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
 .hl-btn-g:active { transform: scale(0.97); }
+
+/* Click ripple — span injected by JS at the click point, one per click */
+.hl-ripple {
+  position: absolute; border-radius: 50%; pointer-events: none;
+  background: rgba(255,255,255,0.35); transform: scale(0); opacity: 0.6;
+  animation: hlRippleFx 0.6s ease-out forwards;
+}
+@keyframes hlRippleFx {
+  to { transform: scale(2.6); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hl-ripple { display: none; }
+}
 
 /* ── Hero feature strip ── */
 .hl-hero-features {
@@ -867,10 +897,12 @@ div[data-testid="stMarkdownContainer"] > p { margin: 0 !important; }
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent);
 }
-/* Glow on hover - per card */
+/* Glow on hover - per card, position follows the cursor (set via JS
+   --mx/--my custom properties on mousemove; falls back to a fixed
+   top-left-ish position if JS hasn't run yet) */
 .hl-highlight::after {
   content: ''; position: absolute; inset: 0;
-  background: radial-gradient(circle at 30% 30%, var(--card-glow, rgba(10,132,255,0.04)), transparent 65%);
+  background: radial-gradient(circle at var(--mx,30%) var(--my,30%), var(--card-glow, rgba(10,132,255,0.04)), transparent 65%);
   opacity: 0; transition: opacity 0.3s;
 }
 .hl-highlight:hover::after { opacity: 1; }
@@ -2144,6 +2176,12 @@ def render_chatbot():
 def render_js():
     JS('(function(){'
 
+      # ── Reduced-motion flag ── used below to gate every purely decorative
+      # JS effect (magnetic buttons, tilt cards, spotlight, particles) so a
+      # visitor who's told their OS to reduce motion actually gets less of
+      # it, not the full treatment anyway.
+      'var reducedMotion=window.matchMedia("(prefers-reduced-motion: reduce)").matches;'
+
       # ── Scroll progress bar ──
       'var sp=document.getElementById("sp");'
       'function updateProgress(){if(!sp)return;var p=(window.scrollY/(document.documentElement.scrollHeight-window.innerHeight))*100;sp.style.width=Math.min(p,100)+"%";}'
@@ -2157,7 +2195,7 @@ def render_js():
       'document.querySelectorAll("a[href^=\'#\']").forEach(function(a){'
       'a.addEventListener("click",function(e){'
       'var t=document.querySelector(this.getAttribute("href"));'
-      'if(t){e.preventDefault();t.scrollIntoView({behavior:"smooth",block:"start"});}'
+      'if(t){e.preventDefault();t.scrollIntoView({behavior:reducedMotion?"auto":"smooth",block:"start"});}'
       '});});'
 
       # ── FAQ accordion ──
@@ -2174,6 +2212,20 @@ def render_js():
 
       # ── Scroll-reveal (IntersectionObserver) ──
       'function initReveal(){'
+      # Auto-stagger: for .hl-reveal elements that don't already carry an
+      # explicit hl-reveal-delay-N class, stagger siblings under the same
+      # parent (e.g. FAQ items, highlight tiles) so they cascade in one
+      # after another instead of all popping in simultaneously.
+      'var byParent=new Map();'
+      'document.querySelectorAll(".hl-reveal").forEach(function(el){'
+      'if(/hl-reveal-delay-/.test(el.className))return;'
+      'var p=el.parentElement;if(!p)return;'
+      'var arr=byParent.get(p)||[];arr.push(el);byParent.set(p,arr);'
+      '});'
+      'byParent.forEach(function(arr){'
+      'if(arr.length<2)return;'
+      'arr.forEach(function(el,i){el.style.animationDelay=Math.min(i,6)*70+"ms";});'
+      '});'
       'var revealObs=new IntersectionObserver(function(entries){'
       'entries.forEach(function(e){'
       'if(e.isIntersecting){e.target.classList.add("hl-animate");revealObs.unobserve(e.target);}'
@@ -2268,7 +2320,7 @@ def render_js():
       'btn.addEventListener("click",function(){'
       'var id=this.getAttribute("data-section");'
       'var target=document.getElementById(id);'
-      'if(target){target.scrollIntoView({behavior:"smooth",block:"start"});}'
+      'if(target){target.scrollIntoView({behavior:reducedMotion?"auto":"smooth",block:"start"});}'
       '});});'
 
       # ── Mobile drawer ──
@@ -2286,7 +2338,7 @@ def render_js():
       # ── Cursor spotlight on hero ──
       'var heroEl=document.querySelector(".hl-hero");'
       'var spotlight=document.getElementById("hl-spotlight");'
-      'if(heroEl&&spotlight){'
+      'if(heroEl&&spotlight&&!reducedMotion){'
       'heroEl.addEventListener("mousemove",function(e){'
       'var rect=heroEl.getBoundingClientRect();'
       'spotlight.style.left=(e.clientX-rect.left)+"px";'
@@ -2320,6 +2372,7 @@ def render_js():
 
       # ── Particle canvas ──
       '(function(){'
+      'if(reducedMotion)return;'
       'var canvas=document.getElementById("hl-particles");'
       'if(!canvas)return;'
       'var ctx=canvas.getContext("2d");'
@@ -2359,6 +2412,61 @@ def render_js():
       '}'
       'loop();'
       'window.addEventListener("resize",resize,{passive:true});'
+      '})();'
+
+      # ── Magnetic buttons ──
+      # Primary/ghost CTAs pull subtly toward the cursor instead of a flat
+      # hover state. Capped to a small radius so it reads as "responsive",
+      # not distracting. Skipped entirely for reduced-motion visitors.
+      '(function(){'
+      'if(reducedMotion)return;'
+      'document.querySelectorAll(".hl-btn-p, .hl-btn-g").forEach(function(btn){'
+      'btn.addEventListener("mousemove",function(e){'
+      'var r=btn.getBoundingClientRect();'
+      'var dx=(e.clientX-(r.left+r.width/2))*0.25;'
+      'var dy=(e.clientY-(r.top+r.height/2))*0.25;'
+      'dx=Math.max(-8,Math.min(8,dx));dy=Math.max(-8,Math.min(8,dy));'
+      'btn.style.transform="translate("+dx+"px,"+dy+"px)";'
+      '},{passive:true});'
+      'btn.addEventListener("mouseleave",function(){btn.style.transform="";});'
+      '});'
+      '})();'
+
+      # ── Click ripple on buttons ──
+      '(function(){'
+      'if(reducedMotion)return;'
+      'document.querySelectorAll(".hl-btn-p, .hl-btn-g").forEach(function(btn){'
+      'btn.addEventListener("click",function(e){'
+      'var r=btn.getBoundingClientRect();'
+      'var size=Math.max(r.width,r.height);'
+      'var span=document.createElement("span");'
+      'span.className="hl-ripple";'
+      'span.style.width=span.style.height=size+"px";'
+      'span.style.left=(e.clientX-r.left-size/2)+"px";'
+      'span.style.top=(e.clientY-r.top-size/2)+"px";'
+      'btn.appendChild(span);'
+      'setTimeout(function(){span.remove();},650);'
+      '});'
+      '});'
+      '})();'
+
+      # ── Tilt cards + cursor-follow glow ──
+      # Feature panels and highlight tiles get a light 3D tilt toward the
+      # cursor; highlight tiles additionally move their existing hover glow
+      # (--mx/--my, see CSS) to track the cursor instead of a fixed spot.
+      '(function(){'
+      'if(reducedMotion)return;'
+      'document.querySelectorAll(".hl-panel, .hl-highlight").forEach(function(card){'
+      'card.addEventListener("mousemove",function(e){'
+      'var r=card.getBoundingClientRect();'
+      'var px=(e.clientX-r.left)/r.width;var py=(e.clientY-r.top)/r.height;'
+      'var rotY=(px-0.5)*6;var rotX=(0.5-py)*6;'
+      'card.style.transform="perspective(800px) rotateX("+rotX+"deg) rotateY("+rotY+"deg) translateY(-2px)";'
+      'card.style.setProperty("--mx",(px*100)+"%");'
+      'card.style.setProperty("--my",(py*100)+"%");'
+      '},{passive:true});'
+      'card.addEventListener("mouseleave",function(){card.style.transform="";});'
+      '});'
       '})();'
 
       '})();')
