@@ -1,7 +1,9 @@
 import hashlib
 import math
 import json
+import re
 from pathlib import Path
+from urllib.parse import quote
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -13,6 +15,64 @@ except Exception:
     # or GROQ_API_KEYS isn't set — degrade gracefully to menu-only mode
     # instead of crashing the whole landing page.
     _CHATBOT_LLM_AVAILABLE = False
+
+
+# ── Chatbot avatars ─────────────────────────────────────────────────────
+# Streamlit's default st.chat_message icons (no `avatar=` passed) render
+# generic built-in bot-style glyphs for BOTH "assistant" and "user" —
+# just tinted differently — so the popover reads as two robots talking
+# instead of "assistant vs. you". These replace them with two small inline
+# SVGs (as data URIs, no extra asset files needed):
+#   - assistant: the same layered mark used in the site's nav-bar logo,
+#     on the brand blue gradient, so it visually reads as "Hirelyzer"
+#   - user: a plain person silhouette on a neutral dark badge, sized and
+#     shaped (rounded square) to match the assistant avatar so the two
+#     read as a deliberate pair, distinguished by color/content only
+def _svg_data_uri(svg: str) -> str:
+    return "data:image/svg+xml," + quote(svg, safe="")
+
+
+HL_BOT_AVATAR = _svg_data_uri(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+    '<stop offset="0" stop-color="#1a6fff"/><stop offset="1" stop-color="#0044bb"/>'
+    '</linearGradient></defs>'
+    '<rect width="64" height="64" rx="18" fill="url(#g)"/>'
+    '<svg x="14" y="14" width="36" height="36" viewBox="0 0 24 24">'
+    '<path d="M12 2L2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5" '
+    'stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
+    '</svg></svg>'
+)
+
+HL_USER_AVATAR = _svg_data_uri(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+    '<rect width="64" height="64" rx="18" fill="#1c1c22"/>'
+    '<rect x="0.5" y="0.5" width="63" height="63" rx="17.5" fill="none" stroke="rgba(255,255,255,0.1)"/>'
+    '<circle cx="32" cy="24" r="9" fill="rgba(245,245,247,0.6)"/>'
+    '<path d="M14 52c0-11.5 8-17.5 18-17.5s18 6 18 17.5" fill="rgba(245,245,247,0.6)"/>'
+    '</svg>'
+)
+
+
+def _render_bot_text(text: str) -> str:
+    """
+    Sanitizes chatbot_llm's LLM-generated replies before they hit
+    st.markdown() (which is called with the default unsafe_allow_html=False).
+
+    The model sometimes uses <br> inside markdown table cells — a normal
+    GFM trick for a line break where a real newline can't go — but since
+    HTML is escaped by default it was showing up as literal "<br>" text
+    in the chat bubble instead of rendering. Converting it to a real
+    markdown line break fixes that.
+
+    Any other stray HTML tag is stripped rather than allowed through:
+    deliberately NOT flipping on unsafe_allow_html for LLM output, since
+    that would let a prompt-injection attempt render arbitrary
+    HTML/script content in visitors' browsers.
+    """
+    text = re.sub(r"<br\s*/?>", "  \n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    return text
 
 
 def _resolve_client_id() -> str:
@@ -1932,8 +1992,11 @@ def render_chatbot():
 
         H('<div id="hl-bot-messages-top"></div>')
         for role, text in st.session_state.hl_bot_history:
-            with st.chat_message("assistant" if role == "bot" else "user"):
-                st.markdown(text)
+            with st.chat_message(
+                "assistant" if role == "bot" else "user",
+                avatar=HL_BOT_AVATAR if role == "bot" else HL_USER_AVATAR,
+            ):
+                st.markdown(_render_bot_text(text) if role == "bot" else text)
         H('<div id="hl-bot-messages-bottom"></div>')
 
         # Auto-scroll the popover to the newest message. Only fires when
@@ -1988,7 +2051,7 @@ def render_chatbot():
                 ]
                 st.session_state.hl_bot_history.append(("user", msg))
                 record_message(client_id)
-                with st.chat_message("assistant"):
+                with st.chat_message("assistant", avatar=HL_BOT_AVATAR):
                     with st.spinner("Thinking…"):
                         reply = ask_chatbot(msg, llm_history)
                 st.session_state.hl_bot_history.append(("bot", reply))
