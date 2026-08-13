@@ -120,7 +120,7 @@ st.set_page_config(
     layout="wide",
 )
 
-APP_URL = "https://hirelyzer-career-based-saas-platform-fhk7kqucw2tjaudtpywq8t.streamlit.app/"
+APP_URL = "https://hirelyzer-career-based-saas-platform-rwp29ku7ce8vk33stwn4gm.streamlit.app/"
 SUPPORT_EMAIL = "swagato_bmca2024@msit.edu.in"
 
 # ─── chatbot decision tree (plain Python — no JS needed) ─────────────────────
